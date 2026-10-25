@@ -1,0 +1,50 @@
+{
+  "name": "ravensight-matrix",
+  "version": "0.1.0",
+  "description": "Schema, scoring, scenario diff and calibration for a strategy matrix of player segments, directions and lenses.",
+  "main": "src/index.js",
+  "module": "esm/index.mjs",
+  "exports": {
+    ".": {
+      "import": "./esm/index.mjs",
+      "require": "./src/index.js",
+      "default": "./src/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "esm",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "node scripts/build-esm.js",
+    "check": "node scripts/build-esm.js --check",
+    "test": "jest",
+    "prepublishOnly": "node scripts/build-esm.js --check && jest"
+  },
+  "license": "MIT",
+  "author": "Reality Software Entertainment",
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "strategy",
+    "decision",
+    "matrix",
+    "calibration",
+    "game-development"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Reality-Software-Entertainment/ravensight-matrix.git"
+  },
+  "homepage": "https://github.com/Reality-Software-Entertainment/ravensight-matrix#readme",
+  "bugs": {
+    "url": "https://github.com/Reality-Software-Entertainment/ravensight-matrix/issues"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  }
+}
