@@ -1,20 +1,22 @@
 name: Publish to npm
 
-# Runs only when a version tag is pushed, so ordinary pushes cost no
-# Actions minutes. Publishing uses npm trusted publishing (OIDC), so there
-# is no npm token secret in this repository.
+# Runs only when a version tag is pushed. Publishing uses npm trusted
+# publishing (OIDC), so there is no npm token secret in this repository.
+#
+# Two jobs: the tests run with read-only permissions and no OIDC token, and
+# the publish job, which alone can mint the token, installs nothing and runs
+# no project code before `npm publish`. It waits on the `npm` environment,
+# whose required reviewer approves each release.
 on:
   push:
     tags: ['v[0-9]+.[0-9]+.[0-9]+']
 
 permissions:
   contents: read
-  id-token: write
 
 jobs:
-  publish:
-    # Skipped until the owner sets repository variable NPM_TRUSTED_PUBLISHING to true, after npmjs.com, package ravensight-matrix, Settings, Trusted publishing, adds GitHub Actions for Reality-Software-Entertainment/ravensight-matrix with workflow file publish.yml.
-    if: github.repository_owner == 'Reality-Software-Entertainment' && vars.NPM_TRUSTED_PUBLISHING == 'true'
+  verify:
+    if: github.repository_owner == 'Reality-Software-Entertainment'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -22,7 +24,6 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
-          registry-url: https://registry.npmjs.org
 
       - run: npm ci
 
@@ -38,11 +39,31 @@ jobs:
             exit 1
           fi
 
+  publish:
+    # Skipped until the owner sets repository variable NPM_TRUSTED_PUBLISHING to true, after npmjs.com, package ravensight-matrix, Settings, Trusted publishing, adds GitHub Actions for Reality-Software-Entertainment/ravensight-matrix with workflow file publish.yml and environment npm.
+    needs: verify
+    if: github.repository_owner == 'Reality-Software-Entertainment' && vars.NPM_TRUSTED_PUBLISHING == 'true'
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
       - name: Skip when this version is already on npm
         id: published
         run: |
           n=$(node -p "require('./package.json').name")
           v=$(node -p "require('./package.json').version")
           if npm view "$n@$v" version >/dev/null 2>&1; then echo "skip=true" >> "$GITHUB_OUTPUT"; fi
-      - run: npm publish --provenance --access public
+
+      # --ignore-scripts: no lifecycle script (prepublishOnly included) runs
+      # while the OIDC token can be minted; verify already ran the checks.
+      - run: npm publish --provenance --access public --ignore-scripts
         if: steps.published.outputs.skip != 'true'

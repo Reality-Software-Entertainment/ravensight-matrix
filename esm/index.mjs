@@ -55,6 +55,7 @@ module.exports = { MINIMUM, outcome, calibrate };
 'use strict';
 
 const { coordinate, indexCells, isContested } = require('./score');
+const { axesOf } = require('./schema');
 
 /**
  * Why a cell is worth another look, most urgent first.
@@ -92,9 +93,10 @@ function gaps(matrix, cells, { limit = 50 } = {}) {
   const index = indexCells(cells);
   const counts = { unscored: 0, assumptions: 0, lowConfidence: 0, contested: 0 };
   const items = [];
-  for (const direction of matrix.directions) {
-    for (const segment of matrix.segments) {
-      for (const lens of matrix.lenses) {
+  const axes = axesOf(matrix);
+  for (const direction of axes.directions) {
+    for (const segment of axes.segments) {
+      for (const lens of axes.lenses) {
         const cell = index.get(coordinate(segment.key, direction.key, lens.key));
         if (!cell) counts.unscored += 1;
         else {
@@ -166,7 +168,7 @@ module.exports = {
   './scenario': function (module, exports, require) {
 'use strict';
 
-const { SCORE_MIN, SCORE_MAX } = require('./schema');
+const { SCORE_MIN, SCORE_MAX, isScore } = require('./schema');
 const { rollup, round } = require('./score');
 const { METHOD } = require('./version');
 
@@ -177,7 +179,10 @@ const clamp = score => Math.min(SCORE_MAX, Math.max(SCORE_MIN, Math.round(score)
 
 function indexByKey(cells) {
   const map = new Map();
-  for (const cell of cells || []) map.set(cellKey(cell.segmentKey, cell.directionKey, cell.lensKey), cell);
+  if (!Array.isArray(cells)) return map;
+  for (const cell of cells) {
+    if (cell && typeof cell === 'object') map.set(cellKey(cell.segmentKey, cell.directionKey, cell.lensKey), cell);
+  }
   return map;
 }
 
@@ -206,8 +211,13 @@ function applyScenario(baseCells, scenarioCells = [], scenario = null) {
   const rules = Array.isArray(scenario && scenario.sensitivity) ? scenario.sensitivity : [];
   const out = new Map();
   for (const key of new Set([...base.keys(), ...overrides.keys()])) {
-    const baseCell = base.get(key) || null;
-    const override = overrides.get(key);
+    // A cell whose score is not an integer on the scale is ignored, so an
+    // invalid override never stands in for a cell and no delta is NaN.
+    const stored = base.get(key);
+    const baseCell = stored && isScore(stored.score) ? stored : null;
+    const given = overrides.get(key);
+    const override = given && isScore(given.score) ? given : null;
+    if (!baseCell && !override) continue;
     if (override) {
       out.set(key, { cell: override, score: override.score, base: baseCell ? baseCell.score : null, source: 'override' });
       continue;
@@ -246,7 +256,7 @@ function diffCells(baseCells, scenarioCells = [], scenario = null) {
       continue;
     }
     const delta = entry.score - entry.base;
-    if (!delta) {
+    if (delta === 0) {
       unchanged += 1;
       continue;
     }
@@ -474,6 +484,7 @@ function validateMatrixCell(matrix, input) {
   const errors = [...base.errors];
   if (!isObject(input)) return base;
   const has = (list, key) => (list || []).some(entry => entry.key === key);
+  if (!isObject(matrix)) return result(['A matrix must be an object.']);
   if (!has(matrix.segments, input.segmentKey)) errors.push(`No segment "${input.segmentKey}" on this matrix.`);
   if (!has(matrix.directions, input.directionKey)) errors.push(`No direction "${input.directionKey}" on this matrix.`);
   if (!has(matrix.lenses, input.lensKey)) errors.push(`No lens "${input.lensKey}" on this matrix.`);
@@ -555,6 +566,20 @@ function validateMatrix(input) {
   return result(errors);
 }
 
+/** True for an integer score inside the scale. */
+const isScore = value => Number.isInteger(value) && value >= SCORE_MIN && value <= SCORE_MAX;
+
+/**
+ * A matrix's axes as arrays, whatever was passed. The math reads the axes
+ * through this so a matrix missing one is treated as empty instead of
+ * throwing.
+ */
+function axesOf(matrix) {
+  const list = value => (Array.isArray(value) ? value.filter(isObject) : []);
+  const source = isObject(matrix) ? matrix : {};
+  return { segments: list(source.segments), directions: list(source.directions), lenses: list(source.lenses) };
+}
+
 module.exports = {
   LIMITS,
   KEY_PATTERN,
@@ -567,6 +592,8 @@ module.exports = {
   COMPARATORS,
   DEFAULT_LENSES,
   isKey,
+  isScore,
+  axesOf,
   validateSegment,
   validateDirection,
   validateLens,
@@ -581,15 +608,19 @@ module.exports = {
   './score': function (module, exports, require) {
 'use strict';
 
-const { SCORE_MIN, SCORE_MAX, SCORE_MID } = require('./schema');
+const { SCORE_MIN, SCORE_MAX, SCORE_MID, axesOf } = require('./schema');
 const { METHOD } = require('./version');
 
 /** Confidence as a number, so it can be averaged, and back. */
 const CONFIDENCE_VALUE = Object.freeze({ low: 1, med: 2, high: 3 });
 
+/** A confidence's number, reading only the three own keys; anything else is low. */
+const confidenceValue = key =>
+  typeof key === 'string' && Object.prototype.hasOwnProperty.call(CONFIDENCE_VALUE, key) ? CONFIDENCE_VALUE[key] : 1;
+
 /** @param {number} value @returns {'low'|'med'|'high'} */
 function confidenceLabel(value) {
-  if (value < 1.5) return 'low';
+  if (!Number.isFinite(value) || value < 1.5) return 'low';
   if (value < 2.5) return 'med';
   return 'high';
 }
@@ -628,9 +659,10 @@ const isContested = cell => (cell.citations || []).some(citation => citation && 
  * count, so an empty lens neither drags a score down nor props it up.
  */
 function weightedCells(matrix, index, direction) {
+  const axes = axesOf(matrix);
   const segments = [];
-  for (const segment of matrix.segments) {
-    const present = matrix.lenses
+  for (const segment of axes.segments) {
+    const present = axes.lenses
       .map(lens => ({ lens, cell: index.get(coordinate(segment.key, direction.key, lens.key)) }))
       .filter(entry => entry.cell);
     if (present.length) segments.push({ segment, present });
@@ -660,7 +692,7 @@ function summarise(parts) {
   const sum = pick => parts.reduce((total, part) => total + part.share * pick(part), 0);
   return {
     score: round(sum(part => part.value)),
-    confidence: confidenceLabel(sum(part => CONFIDENCE_VALUE[part.cell.confidence] || 1)),
+    confidence: confidenceLabel(sum(part => confidenceValue(part.cell.confidence))),
     assumptionShare: round(sum(part => (part.cell.basis === 'assumption' ? 1 : 0))),
     contested: parts.filter(part => isContested(part.cell)).length,
     cells: parts.length
@@ -682,17 +714,18 @@ function summarise(parts) {
  */
 function rollup(matrix, cells, { top = 3 } = {}) {
   const index = indexCells(cells);
-  const expected = matrix.segments.length * matrix.lenses.length;
+  const axes = axesOf(matrix);
+  const expected = axes.segments.length * axes.lenses.length;
 
-  const directions = matrix.directions.map(direction => {
+  const directions = axes.directions.map(direction => {
     const parts = weightedCells(matrix, index, direction);
-    const segments = matrix.segments.map(segment => {
+    const segments = axes.segments.map(segment => {
       const own = parts.filter(part => part.segment.key === segment.key);
       const total = own.reduce((sum, part) => sum + part.share, 0);
       // Re-normalised inside the segment, so a segment's own score does not
       // depend on how many other segments were filled.
       const local = own.map(part => ({ ...part, share: part.share / total }));
-      return { segmentKey: segment.key, ...summarise(local), expected: matrix.lenses.length };
+      return { segmentKey: segment.key, ...summarise(local), expected: axes.lenses.length };
     });
     const contributions = parts
       .map(part => ({
@@ -774,6 +807,8 @@ export const {
   COMPARATORS,
   DEFAULT_LENSES,
   isKey,
+  isScore,
+  axesOf,
   validateSegment,
   validateDirection,
   validateLens,

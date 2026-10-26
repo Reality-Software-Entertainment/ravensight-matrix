@@ -176,6 +176,7 @@ function validateMatrixCell(matrix, input) {
   const errors = [...base.errors];
   if (!isObject(input)) return base;
   const has = (list, key) => (list || []).some(entry => entry.key === key);
+  if (!isObject(matrix)) return result(['A matrix must be an object.']);
   if (!has(matrix.segments, input.segmentKey)) errors.push(`No segment "${input.segmentKey}" on this matrix.`);
   if (!has(matrix.directions, input.directionKey)) errors.push(`No direction "${input.directionKey}" on this matrix.`);
   if (!has(matrix.lenses, input.lensKey)) errors.push(`No lens "${input.lensKey}" on this matrix.`);
@@ -257,6 +258,20 @@ function validateMatrix(input) {
   return result(errors);
 }
 
+/** True for an integer score inside the scale. */
+const isScore = value => Number.isInteger(value) && value >= SCORE_MIN && value <= SCORE_MAX;
+
+/**
+ * A matrix's axes as arrays, whatever was passed. The math reads the axes
+ * through this so a matrix missing one is treated as empty instead of
+ * throwing.
+ */
+function axesOf(matrix) {
+  const list = value => (Array.isArray(value) ? value.filter(isObject) : []);
+  const source = isObject(matrix) ? matrix : {};
+  return { segments: list(source.segments), directions: list(source.directions), lenses: list(source.lenses) };
+}
+
 module.exports = {
   LIMITS,
   KEY_PATTERN,
@@ -269,6 +284,8 @@ module.exports = {
   COMPARATORS,
   DEFAULT_LENSES,
   isKey,
+  isScore,
+  axesOf,
   validateSegment,
   validateDirection,
   validateLens,

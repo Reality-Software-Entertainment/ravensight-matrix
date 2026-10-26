@@ -1,6 +1,7 @@
 'use strict';
 
 const { coordinate, indexCells, isContested } = require('./score');
+const { axesOf } = require('./schema');
 
 /**
  * Why a cell is worth another look, most urgent first.
@@ -38,9 +39,10 @@ function gaps(matrix, cells, { limit = 50 } = {}) {
   const index = indexCells(cells);
   const counts = { unscored: 0, assumptions: 0, lowConfidence: 0, contested: 0 };
   const items = [];
-  for (const direction of matrix.directions) {
-    for (const segment of matrix.segments) {
-      for (const lens of matrix.lenses) {
+  const axes = axesOf(matrix);
+  for (const direction of axes.directions) {
+    for (const segment of axes.segments) {
+      for (const lens of axes.lenses) {
         const cell = index.get(coordinate(segment.key, direction.key, lens.key));
         if (!cell) counts.unscored += 1;
         else {

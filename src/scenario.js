@@ -1,6 +1,6 @@
 'use strict';
 
-const { SCORE_MIN, SCORE_MAX } = require('./schema');
+const { SCORE_MIN, SCORE_MAX, isScore } = require('./schema');
 const { rollup, round } = require('./score');
 const { METHOD } = require('./version');
 
@@ -11,7 +11,10 @@ const clamp = score => Math.min(SCORE_MAX, Math.max(SCORE_MIN, Math.round(score)
 
 function indexByKey(cells) {
   const map = new Map();
-  for (const cell of cells || []) map.set(cellKey(cell.segmentKey, cell.directionKey, cell.lensKey), cell);
+  if (!Array.isArray(cells)) return map;
+  for (const cell of cells) {
+    if (cell && typeof cell === 'object') map.set(cellKey(cell.segmentKey, cell.directionKey, cell.lensKey), cell);
+  }
   return map;
 }
 
@@ -40,8 +43,13 @@ function applyScenario(baseCells, scenarioCells = [], scenario = null) {
   const rules = Array.isArray(scenario && scenario.sensitivity) ? scenario.sensitivity : [];
   const out = new Map();
   for (const key of new Set([...base.keys(), ...overrides.keys()])) {
-    const baseCell = base.get(key) || null;
-    const override = overrides.get(key);
+    // A cell whose score is not an integer on the scale is ignored, so an
+    // invalid override never stands in for a cell and no delta is NaN.
+    const stored = base.get(key);
+    const baseCell = stored && isScore(stored.score) ? stored : null;
+    const given = overrides.get(key);
+    const override = given && isScore(given.score) ? given : null;
+    if (!baseCell && !override) continue;
     if (override) {
       out.set(key, { cell: override, score: override.score, base: baseCell ? baseCell.score : null, source: 'override' });
       continue;
@@ -80,7 +88,7 @@ function diffCells(baseCells, scenarioCells = [], scenario = null) {
       continue;
     }
     const delta = entry.score - entry.base;
-    if (!delta) {
+    if (delta === 0) {
       unchanged += 1;
       continue;
     }

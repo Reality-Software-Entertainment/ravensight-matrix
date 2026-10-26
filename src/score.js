@@ -1,14 +1,18 @@
 'use strict';
 
-const { SCORE_MIN, SCORE_MAX, SCORE_MID } = require('./schema');
+const { SCORE_MIN, SCORE_MAX, SCORE_MID, axesOf } = require('./schema');
 const { METHOD } = require('./version');
 
 /** Confidence as a number, so it can be averaged, and back. */
 const CONFIDENCE_VALUE = Object.freeze({ low: 1, med: 2, high: 3 });
 
+/** A confidence's number, reading only the three own keys; anything else is low. */
+const confidenceValue = key =>
+  typeof key === 'string' && Object.prototype.hasOwnProperty.call(CONFIDENCE_VALUE, key) ? CONFIDENCE_VALUE[key] : 1;
+
 /** @param {number} value @returns {'low'|'med'|'high'} */
 function confidenceLabel(value) {
-  if (value < 1.5) return 'low';
+  if (!Number.isFinite(value) || value < 1.5) return 'low';
   if (value < 2.5) return 'med';
   return 'high';
 }
@@ -47,9 +51,10 @@ const isContested = cell => (cell.citations || []).some(citation => citation && 
  * count, so an empty lens neither drags a score down nor props it up.
  */
 function weightedCells(matrix, index, direction) {
+  const axes = axesOf(matrix);
   const segments = [];
-  for (const segment of matrix.segments) {
-    const present = matrix.lenses
+  for (const segment of axes.segments) {
+    const present = axes.lenses
       .map(lens => ({ lens, cell: index.get(coordinate(segment.key, direction.key, lens.key)) }))
       .filter(entry => entry.cell);
     if (present.length) segments.push({ segment, present });
@@ -79,7 +84,7 @@ function summarise(parts) {
   const sum = pick => parts.reduce((total, part) => total + part.share * pick(part), 0);
   return {
     score: round(sum(part => part.value)),
-    confidence: confidenceLabel(sum(part => CONFIDENCE_VALUE[part.cell.confidence] || 1)),
+    confidence: confidenceLabel(sum(part => confidenceValue(part.cell.confidence))),
     assumptionShare: round(sum(part => (part.cell.basis === 'assumption' ? 1 : 0))),
     contested: parts.filter(part => isContested(part.cell)).length,
     cells: parts.length
@@ -101,17 +106,18 @@ function summarise(parts) {
  */
 function rollup(matrix, cells, { top = 3 } = {}) {
   const index = indexCells(cells);
-  const expected = matrix.segments.length * matrix.lenses.length;
+  const axes = axesOf(matrix);
+  const expected = axes.segments.length * axes.lenses.length;
 
-  const directions = matrix.directions.map(direction => {
+  const directions = axes.directions.map(direction => {
     const parts = weightedCells(matrix, index, direction);
-    const segments = matrix.segments.map(segment => {
+    const segments = axes.segments.map(segment => {
       const own = parts.filter(part => part.segment.key === segment.key);
       const total = own.reduce((sum, part) => sum + part.share, 0);
       // Re-normalised inside the segment, so a segment's own score does not
       // depend on how many other segments were filled.
       const local = own.map(part => ({ ...part, share: part.share / total }));
-      return { segmentKey: segment.key, ...summarise(local), expected: matrix.lenses.length };
+      return { segmentKey: segment.key, ...summarise(local), expected: axes.lenses.length };
     });
     const contributions = parts
       .map(part => ({

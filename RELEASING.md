@@ -11,5 +11,6 @@ The package is developed in Ravensight's own repository under
    CHANGELOG entry.
 3. `npm install && npm run check && npm test`.
 4. Commit, then tag `vX.Y.Z` and push the tag. `publish.yml` publishes with
-   provenance once `NPM_TRUSTED_PUBLISHING` is set; until then publish by
+   provenance once `NPM_TRUSTED_PUBLISHING` is set and a reviewer approves the
+   run in the `npm` environment; until then publish by
    hand with `npm publish --access public`.
