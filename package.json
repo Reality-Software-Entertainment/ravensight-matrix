@@ -22,7 +22,9 @@
     "build": "node scripts/build-esm.js",
     "check": "node scripts/build-esm.js --check",
     "test": "jest",
-    "prepublishOnly": "node scripts/build-esm.js --check && jest"
+    "prepublishOnly": "node scripts/build-esm.js --check && jest",
+    "hooks:install": "git config core.hooksPath .githooks",
+    "prepare": "node -e \"try{require('child_process').execFileSync('git',['config','core.hooksPath','.githooks'],{stdio:'ignore'})}catch(e){}\""
   },
   "license": "MIT",
   "author": "Reality Software Entertainment",
